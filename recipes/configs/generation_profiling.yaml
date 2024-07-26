@@ -18,7 +18,7 @@ checkpointer:
   model_type: LLAMA2
 
 device: cuda
-dtype: float32
+dtype: fp32
 
 seed: 1234
 
