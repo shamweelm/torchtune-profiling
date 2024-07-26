@@ -15,6 +15,7 @@ from torch import nn
 from torchtune import config, utils
 from torchtune.config._utils import _get_component_from_path
 from torchtune.data import ChatFormat, InstructTemplate, Message
+import autonvtx
 
 logger = utils.get_logger("DEBUG")
 
@@ -82,6 +83,9 @@ class InferenceRecipe:
         if enable_kv_cache:
             with self._device:
                 model.setup_caches(batch_size=1, dtype=self._dtype)
+
+        # Wrap the model with autonvtx for NVTX profiling
+        model = autonvtx(model)
 
         return model
 
@@ -199,7 +203,11 @@ def main(cfg: DictConfig) -> None:
     config.log_config(recipe_name="InferenceRecipe", cfg=cfg)
     recipe = InferenceRecipe(cfg=cfg)
     recipe.setup(cfg=cfg)
-    recipe.generate(cfg=cfg)
+    # recipe.generate(cfg=cfg)
+    torch.cuda.profiler.start()
+    with torch.autograd.profiler.emit_nvtx():
+        recipe.generate(cfg=cfg)
+    torch.cuda.profiler.stop()
 
 
 if __name__ == "__main__":

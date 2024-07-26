@@ -31,6 +31,7 @@ from torchtune.recipe_interfaces import FTRecipeInterface
 from torchtune.utils import DummyProfiler, PROFILER_KEY
 
 from tqdm import tqdm
+import autonvtx
 
 log = utils.get_logger("DEBUG")
 
@@ -339,6 +340,10 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
     ) -> nn.Module:
         with utils.set_default_dtype(self._dtype), self._device:
             model = config.instantiate(cfg_model)
+        
+        # Wrap the model with autonvtx for NVTX profiling
+        # model = autonvtx(model).to(self._device)
+        model = autonvtx(model)
 
         self._lora_rank = cfg_model.lora_rank
         self._lora_alpha = cfg_model.lora_alpha
@@ -540,7 +545,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
             for curr_epoch in range(self.epochs_run, self.total_epochs):
                 # Update the sampler to ensure data is correctly shuffled across epochs
                 # in case shuffle is True
+                print(f"Epoch: {curr_epoch+1}")
                 self._sampler.set_epoch(curr_epoch)
+                print(f"Sampler set to epoch: {curr_epoch}")
 
                 pbar = tqdm(total=self._steps_per_epoch)
                 for idx, batch in enumerate(self._dataloader):
@@ -549,6 +556,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                         and (idx // self._gradient_accumulation_steps)
                         == self.max_steps_per_epoch
                     ):
+                        print(f"Max steps per epoch reached: {self.max_steps_per_epoch}")
                         break
 
                     # Both are shape [b, s]
@@ -557,16 +565,19 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                     # exist. Currently, only sample packing in PackedDataset returns these
                     mask = batch.get("mask", None)  # shape [b, s, s]
                     input_pos = batch.get("input_pos", None)  # shape [b, s]
+                    print(f"Tokens shape: {tokens.shape}")
 
                     tokens = tokens.to(self._device)
                     num_tokens += tokens.numel()
                     labels = labels.to(self._device)
+                    print(f"Moved tokens and labels to device: {self._device}")
                     mask = mask.to(self._device) if mask is not None else None
                     input_pos = (
                         input_pos.to(self._device) if input_pos is not None else None
                     )
 
                     logits = self._model(tokens, mask=mask, input_pos=input_pos)
+                    print(f"Model forward pass completed.")
                     # Shift so that tokens < n predict n
                     logits = logits[..., :-1, :].contiguous()
                     labels = labels[..., 1:].contiguous()
@@ -576,12 +587,14 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                     loss = loss / self._gradient_accumulation_steps
                     running_loss += loss
                     loss.backward()
+                    print(f"Loss computed and backward pass completed.")
 
                     # Step with optimizer
                     if (idx + 1) % self._gradient_accumulation_steps == 0:
                         self._optimizer.step()
                         self._optimizer.zero_grad(set_to_none=True)
                         self._lr_scheduler.step()
+                        print(f"Optimizer step and scheduler step completed.")
                         # Update the number of steps when the weights are updated
                         self.global_step += 1
 
@@ -593,6 +606,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
 
                         # Log per-step metrics
                         if self.global_step % self._log_every_n_steps == 0:
+                            print(f"Logging metrics at step: {self.global_step}")
                             time_per_step = time.perf_counter() - t0
                             log_dict = {
                                 "loss": loss_to_log,
@@ -603,6 +617,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                                 self._device.type == "cuda"
                                 and self._log_peak_memory_stats
                             ):
+                                print(f"Logging memory stats at step: {self.global_step}")
                                 log_dict.update(
                                     utils.get_memory_stats(device=self._device)
                                 )
@@ -615,6 +630,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                         running_loss = 0
                         num_tokens = 0
                         t0 = time.perf_counter()
+                        print(f"Reset running loss and num tokens.")
 
                     # Step the profiler
                     # Note we are stepping each batch, which might not include optimizer step in the trace
@@ -622,7 +638,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                     prof.step()
 
                 self.epochs_run += 1
-                self.save_checkpoint(epoch=curr_epoch)
+                print(f"Epoch {curr_epoch+1} completed.")
+                # self.save_checkpoint(epoch=curr_epoch)
+                # print(f"Checkpoint saved for epoch: {curr_epoch}")
 
     def cleanup(self) -> None:
         self._metric_logger.close()
@@ -640,7 +658,10 @@ def recipe_main(cfg: DictConfig) -> None:
     config.log_config(recipe_name="LoRAFinetuneRecipeSingleDevice", cfg=cfg)
     recipe = LoRAFinetuneRecipeSingleDevice(cfg=cfg)
     recipe.setup(cfg=cfg)
-    recipe.train()
+    torch.cuda.profiler.start()
+    with torch.autograd.profiler.emit_nvtx():
+        recipe.train()
+    torch.cuda.profiler.stop()
     recipe.cleanup()
 
 
