@@ -165,7 +165,7 @@ class TransformerDecoder(nn.Module):
         # to the right tokens
         self.causal_mask = torch.tril(
             torch.ones(self.max_seq_len, self.max_seq_len, dtype=torch.bool)
-        )
+        ).to(self.tok_embeddings.weight.device)
 
     def caches_are_enabled(self) -> bool:
         """Check if the key value caches are setup."""

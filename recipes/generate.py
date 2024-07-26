@@ -16,6 +16,8 @@ from torchtune import config, utils
 from torchtune.config._utils import _get_component_from_path
 from torchtune.data import ChatFormat, InstructTemplate, Message
 import autonvtx
+import nvidia_dlprof_pytorch_nvtx as nvtx
+nvtx.init(enable_function_stack=True)
 
 logger = utils.get_logger("DEBUG")
 
@@ -86,6 +88,9 @@ class InferenceRecipe:
 
         # Wrap the model with autonvtx for NVTX profiling
         model = autonvtx(model)
+        
+        # Move model to device
+        model = model.to(self._device)
 
         return model
 
@@ -166,6 +171,7 @@ class InferenceRecipe:
             logger.info(f"Warmup run for quantized model takes: {t:.02f} sec")
 
         t0 = time.perf_counter()
+        logger.info("Starting generation ...")
         generated_tokens = utils.generate(
             model=self._model,
             prompt=prompt,
