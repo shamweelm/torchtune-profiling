@@ -80,7 +80,7 @@ _ALL_RECIPES = [
                 file_path="llama2/7B_lora_single_device.yaml",
             ),
             Config(
-                name="llama2/7B_low_single_device_profiling",
+                name="llama2/7B_lora_single_device_profiling",
                 file_path="llama2/7B_low_single_device_profiling.yaml",
             ),
             Config(
