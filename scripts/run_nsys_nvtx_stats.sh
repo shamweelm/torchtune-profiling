@@ -54,6 +54,6 @@ echo "All commands executed successfully. Check the output in ${OUTPUT_DIR}."
 # End of script
 
 # Usage
-# chmod +x run_nsys_stats.sh
-# ./run_nsys_stats.sh <output_dir> <input_file>
-# ./run_nsys_stats.sh /path/to/output/directory /path/to/nsys_profile.sqlite
+# chmod +x run_nsys_nvtx_stats.sh
+# ./run_nsys_nvtx_stats.sh <output_dir> <input_file> <task_name>
+# ./run_nsys_nvtx_stats.sh /path/to/output/directory /path/to/nsys_profile.sqlite task_name
