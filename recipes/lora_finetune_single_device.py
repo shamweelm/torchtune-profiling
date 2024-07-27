@@ -102,7 +102,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
     """
 
     def __init__(self, cfg: DictConfig) -> None:
-
+        torch.cuda.nvtx.range_push("LoRAFinetuneRecipeSingleDevice.__init__")
         self._device = utils.get_device(device=cfg.device)
         # Reduced precision logic
         self._dtype = utils.get_dtype(cfg.dtype, device=self._device)
@@ -134,6 +134,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
 
         self._resume_from_checkpoint = cfg.resume_from_checkpoint
         self._gradient_accumulation_steps = cfg.gradient_accumulation_steps
+        torch.cuda.nvtx.range_pop()
 
     def load_checkpoint(self, cfg_checkpointer: DictConfig) -> Dict[str, Any]:
         """
@@ -141,13 +142,17 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         base model weights. If resume_from_checkpoint is True, this also includes
         the adapter weights and recipe state
         """
+        torch.cuda.nvtx.range_push("LoRAFinetuneRecipeSingleDevice.load_checkpoint")
+        torch.cuda.nvtx.range_push("checkpointer_setup")
         self._checkpointer = config.instantiate(
             cfg_checkpointer,
             resume_from_checkpoint=self._resume_from_checkpoint,
         )
         checkpoint_dict = self._checkpointer.load_checkpoint()
-
+        torch.cuda.nvtx.range_pop()
+        
         if self._resume_from_checkpoint:
+            torch.cuda.nvtx.range_push("_resume_from_checkpoint")
             if utils.ADAPTER_KEY not in checkpoint_dict:
                 raise ValueError(
                     "Adapter weights not found. Please ensure a valid adapter checkpoint is provided."
@@ -155,6 +160,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
             # _update_recipe_state will throw an exception if the recipe state is not corrctly loaded
             # no need to check here
             self._update_recipe_state(checkpoint_dict)
+            torch.cuda.nvtx.range_pop()
+            
+        torch.cuda.nvtx.range_pop()
         return checkpoint_dict
 
     def _update_recipe_state(self, ckpt_dict: Dict[str, Any]) -> None:
@@ -162,6 +170,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         Updates the recipe state from checkpoint.
         """
         try:
+            torch.cuda.nvtx.range_push("update_recipe_state")
             self.epochs_run = ckpt_dict[utils.EPOCHS_KEY]
 
             # on mismatch, warn the user and prevent the override
@@ -190,6 +199,8 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                         f"using the config value: {self.total_epochs}"
                     )
                 )
+            
+            torch.cuda.nvtx.range_pop()
 
         except KeyError as e:
             raise KeyError(
@@ -202,12 +213,16 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         Setup the recipe state. This includes recipe state (if resume_from_checkpoint is True),
         model, tokenizer, loss, optimizer, learning rate scheduler, sampler, and dataloader.
         """
+        torch.cuda.nvtx.range_push("LoRAFinetuneRecipeSingleDevice.setup")
+        
+        torch.cuda.nvtx.range_push("setup_metric_logger")
         self._metric_logger = config.instantiate(cfg.metric_logger)
-
         # log config with parameter override
         self._metric_logger.log_config(cfg)
+        torch.cuda.nvtx.range_pop()
 
         self._model_compile = cfg.compile
+        
         checkpoint_dict = self.load_checkpoint(cfg_checkpointer=cfg.checkpointer)
 
         self._model = self._setup_model(
@@ -340,28 +355,44 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         base_model_state_dict: Dict[str, Any],
         lora_weights_state_dict: Optional[Dict[str, Any]] = None,
     ) -> nn.Module:
+        torch.cuda.nvtx.range_push("LoRAFinetuneRecipeSingleDevice._setup_model")
+        
+        torch.cuda.nvtx.range_push("model_instantiation")
         with utils.set_default_dtype(self._dtype), self._device:
             model = config.instantiate(cfg_model)
+        torch.cuda.nvtx.range_pop()
         
         # Wrap the model with autonvtx for NVTX profiling
         # model = autonvtx(model).to(self._device)
         model = autonvtx(model)
         # Move model to device
+        torch.cuda.nvtx.range_push("model_to_device")
         model = model.to(self._device)
+        torch.cuda.nvtx.range_pop()
 
+        # LoRA specific parameters
+        torch.cuda.nvtx.range_push("lora_params")
         self._lora_rank = cfg_model.lora_rank
         self._lora_alpha = cfg_model.lora_alpha
         self._lora_attn_modules = list(cfg_model.lora_attn_modules)
         self._apply_lora_to_mlp = cfg_model.apply_lora_to_mlp
         self._apply_lora_to_output = getattr(cfg_model, "apply_lora_to_output", False)
         self.adapter_params = get_adapter_params(model)
+        torch.cuda.nvtx.range_pop()
+        # Set adapter params to trainable
+        torch.cuda.nvtx.range_push("set_trainable_params")
         set_trainable_params(model, self.adapter_params)
+        torch.cuda.nvtx.range_pop()
 
         if enable_activation_checkpointing:
+            torch.cuda.nvtx.range_push("activation_checkpointing")
             utils.set_activation_checkpointing(
                 model, auto_wrap_policy={modules.TransformerDecoderLayer}
             )
+            torch.cuda.nvtx.range_pop()
 
+        # Load model weights
+        torch.cuda.nvtx.range_push("load_state_dict_bare_and_lora")
         base_missing, base_unexpected = model.load_state_dict(
             base_model_state_dict, strict=False
         )
@@ -371,6 +402,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
             )
         else:
             lora_missing, lora_unexpected = None, None
+        torch.cuda.nvtx.range_pop()
         validate_missing_and_unexpected_for_lora(
             lora_attn_modules=self._lora_attn_modules,
             apply_lora_to_mlp=self._apply_lora_to_mlp,
@@ -383,29 +415,37 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         # Validate model adapter params were loaded in with the expected dtype
         # TODO (rohan-varma): Further validation to ensure the appropriate base params
         # are NF4 vs bf16 based on the quantization config.
+        torch.cuda.nvtx.range_push("validate_expected_param_dtype")
         utils.validate_expected_param_dtype(
             self.adapter_params.items(), dtype=self._dtype
         )
+        torch.cuda.nvtx.range_pop()
 
         log.info(f"Model is initialized with precision {self._dtype}.")
         # Compile model, if enabled.
         if compile_model:
             log.info("Compiling model with torch.compile...")
+            torch.cuda.nvtx.range_push("model_compile")
             backend = os.environ.get("TORCH_COMPILE_BACKEND", "inductor")
             model.compile(backend=backend)
+            torch.cuda.nvtx.range_pop()
         if self._device.type == "cuda":
+            torch.cuda.nvtx.range_push("log_memory_stats")
             memory_stats = utils.get_memory_stats(device=self._device)
             utils.log_memory_stats(memory_stats)
+            torch.cuda.nvtx.range_pop()
         return model
 
     def _setup_optimizer(
         self, cfg_optimizer: DictConfig, opt_state_dict: Optional[Dict[str, Any]] = None
     ) -> Optimizer:
+        torch.cuda.nvtx.range_push("LoRAFinetuneRecipeSingleDevice._setup_optimizer")
         optimizer = config.instantiate(cfg_optimizer, self._model.parameters())
         if opt_state_dict:
             optimizer.load_state_dict(opt_state_dict)
 
         log.info("Optimizer and loss are initialized.")
+        torch.cuda.nvtx.range_pop()
         return optimizer
 
     def _setup_lr_scheduler(
@@ -414,6 +454,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         num_training_steps: int,
         last_epoch: int,
     ) -> Optimizer:
+        torch.cuda.nvtx.range_push("LoRAFinetuneRecipeSingleDevice._setup_lr_scheduler")
         lr_scheduler = config.instantiate(
             cfg_lr_scheduler,
             self._optimizer,
@@ -422,6 +463,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         )
 
         log.info("Learning rate scheduler is initialized.")
+        torch.cuda.nvtx.range_pop()
         return lr_scheduler
 
     def _setup_data(
@@ -435,6 +477,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         Map-style Datasets which fit into memory and an option for random shuffling.
         Samplers, iterable datasets, and streaming datasets are not supported.
         """
+        torch.cuda.nvtx.range_push("LoRAFinetuneRecipeSingleDevice._setup_data")
+        
+        torch.cuda.nvtx.range_push("setup_datasets_and_packed")
         if isinstance(cfg_dataset, ListConfig):
             datasets = [
                 config.instantiate(single_cfg_dataset, tokenizer=self._tokenizer)
@@ -445,7 +490,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         else:
             ds = config.instantiate(cfg_dataset, tokenizer=self._tokenizer)
             packed = cfg_dataset.get("packed", False)
+        torch.cuda.nvtx.range_pop()
 
+        torch.cuda.nvtx.range_push("sampler")
         sampler = DistributedSampler(
             ds,
             num_replicas=1,
@@ -453,6 +500,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
             shuffle=shuffle,
             seed=0,
         )
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("dataloader")
         dataloader = DataLoader(
             dataset=ds,
             sampler=sampler,
@@ -465,9 +515,10 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
             if not packed
             else None,
         )
-
+        torch.cuda.nvtx.range_pop()
         log.info("Dataset and Sampler are initialized.")
 
+        torch.cuda.nvtx.range_pop()
         return sampler, dataloader
 
     def save_checkpoint(self, epoch: int) -> None:
@@ -533,7 +584,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         """
         The core training loop.
         """
-
+        torch.cuda.nvtx.range_push("LoRAFinetuneRecipeSingleDevice.train")
         if self._model_compile:
             log.info(
                 "NOTE: torch.compile is enabled and model is compiled in first forward. Expect a relatively slow first iteration."
@@ -546,6 +597,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
 
         with self._profiler as prof:
             # self.epochs_run should be non-zero when we're resuming from a checkpoint
+            torch.cuda.nvtx.range_push("epoch_loop")
             for curr_epoch in range(self.epochs_run, self.total_epochs):
                 # Update the sampler to ensure data is correctly shuffled across epochs
                 # in case shuffle is True
@@ -554,7 +606,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                 # print(f"Sampler set to epoch: {curr_epoch}")
 
                 pbar = tqdm(total=self._steps_per_epoch)
+                torch.cuda.nvtx.range_push(f"epoch_{curr_epoch+1}")
                 for idx, batch in enumerate(self._dataloader):
+                    torch.cuda.nvtx.range_push(f"step_{idx+1}")
                     if (
                         self.max_steps_per_epoch is not None
                         and (idx // self._gradient_accumulation_steps)
@@ -562,7 +616,8 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                     ):
                         # print(f"Max steps per epoch reached: {self.max_steps_per_epoch}")
                         break
-
+                    
+                    torch.cuda.nvtx.range_push(f"get_data_for_batch_to_device_{idx+1}")
                     # Both are shape [b, s]
                     tokens, labels = batch["tokens"], batch["labels"]
                     # Get the attention mask and position ids from the dataset if they
@@ -579,10 +634,14 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                     input_pos = (
                         input_pos.to(self._device) if input_pos is not None else None
                     )
+                    torch.cuda.nvtx.range_pop()
 
+                    torch.cuda.nvtx.range_push(f"model_forward_{idx+1}")
                     logits = self._model(tokens, mask=mask, input_pos=input_pos)
+                    torch.cuda.nvtx.range_pop()
                     # print(f"Model forward pass completed.")
                     # Shift so that tokens < n predict n
+                    torch.cuda.nvtx.range_push(f"compute_loss_{idx+1}")
                     logits = logits[..., :-1, :].contiguous()
                     labels = labels[..., 1:].contiguous()
                     logits = logits.transpose(1, 2)
@@ -592,12 +651,17 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                     running_loss += loss
                     loss.backward()
                     # print(f"Loss computed and backward pass completed.")
+                    torch.cuda.nvtx.range_pop()
 
                     # Step with optimizer
                     if (idx + 1) % self._gradient_accumulation_steps == 0:
+                        torch.cuda.nvtx.range_push(f"optimizer_step_{idx+1}")
                         self._optimizer.step()
                         self._optimizer.zero_grad(set_to_none=True)
+                        torch.cuda.nvtx.range_pop()
+                        torch.cuda.nvtx.range_push(f"lr_scheduler_step_{idx+1}")
                         self._lr_scheduler.step()
+                        torch.cuda.nvtx.range_pop()
                         # print(f"Optimizer step and scheduler step completed.")
                         # Update the number of steps when the weights are updated
                         self.global_step += 1
@@ -610,6 +674,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
 
                         # Log per-step metrics
                         if self.global_step % self._log_every_n_steps == 0:
+                            torch.cuda.nvtx.range_push(f"logging_metrics_{self.global_step}")
                             # print(f"Logging metrics at step: {self.global_step}")
                             time_per_step = time.perf_counter() - t0
                             log_dict = {
@@ -629,22 +694,28 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                                 log_dict,
                                 step=self.global_step,
                             )
+                            torch.cuda.nvtx.range_pop()
 
                         # Reset running stats for the next step
                         running_loss = 0
                         num_tokens = 0
                         t0 = time.perf_counter()
                         # print(f"Reset running loss and num tokens.")
+                    torch.cuda.nvtx.range_pop()
 
                     # Step the profiler
                     # Note we are stepping each batch, which might not include optimizer step in the trace
                     # if the schedule cycle doesn't align with gradient accumulation.
                     prof.step()
+                    
+                torch.cuda.nvtx.range_pop()
 
                 self.epochs_run += 1
                 # print(f"Epoch {curr_epoch+1} completed.")
                 # self.save_checkpoint(epoch=curr_epoch)
                 # print(f"Checkpoint saved for epoch: {curr_epoch}")
+            
+            torch.cuda.nvtx.range_pop()
 
     def cleanup(self) -> None:
         self._metric_logger.close()

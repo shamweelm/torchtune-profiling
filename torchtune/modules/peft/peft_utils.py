@@ -8,6 +8,7 @@ import contextlib
 from typing import Any, Dict, Generator, List, Literal, Optional, Protocol, Set
 
 from torch import nn
+import torch
 
 # Modules from CausalSelfAttention that LoRA can be applied to
 LORA_ATTN_MODULES = Literal["q_proj", "k_proj", "v_proj", "output_proj"]
@@ -98,11 +99,13 @@ def get_lora_module_names(
     Returns:
         List[str]: list of module names in the model that have LoRA applied.
     """
+    torch.cuda.nvtx.range_push("get_lora_module_names")
     lora_module_keys = lora_attn_modules
     if apply_lora_to_mlp:
         lora_module_keys = lora_module_keys + ["w1", "w2", "w3"]
     if apply_lora_to_output:
         lora_module_keys.append("output")
+    torch.cuda.nvtx.range_pop()
     return lora_module_keys
 
 
@@ -324,10 +327,14 @@ def validate_missing_and_unexpected_for_lora(
         AssertionError: if lora_missing contains any LoRA keys.
         AssertionError: if lora_unexpected is nonempty.
     """
+    torch.cuda.nvtx.range_push("validate_missing_and_unexpected_for_lora")
+    
     lora_modules = get_lora_module_names(
         lora_attn_modules, apply_lora_to_mlp, apply_lora_to_output
     )
     is_lora_param = lambda x: any([".".join([k, "lora"]) in x for k in lora_modules])
+    
+    torch.cuda.nvtx.range_push("check_missing_and_unexpected")
     if base_missing:
         for k in base_missing:
             if not is_lora_param(k):
@@ -340,3 +347,6 @@ def validate_missing_and_unexpected_for_lora(
                 raise AssertionError(f"Missing LoRA key {k} from adapter state dict")
     if lora_unexpected:
         raise AssertionError("Unexpected key loading adapter")
+    torch.cuda.nvtx.range_pop()
+    
+    torch.cuda.nvtx.range_pop()
