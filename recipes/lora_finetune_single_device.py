@@ -32,8 +32,6 @@ from torchtune.utils import DummyProfiler, PROFILER_KEY
 
 from tqdm import tqdm
 import autonvtx
-import nvidia_dlprof_pytorch_nvtx as nvtx
-nvtx.init(enable_function_stack=True)
 
 log = utils.get_logger("DEBUG")
 
