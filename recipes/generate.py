@@ -16,8 +16,6 @@ from torchtune import config, utils
 from torchtune.config._utils import _get_component_from_path
 from torchtune.data import ChatFormat, InstructTemplate, Message
 import autonvtx
-import nvidia_dlprof_pytorch_nvtx as nvtx
-nvtx.init(enable_function_stack=True)
 
 logger = utils.get_logger("DEBUG")
 
@@ -38,14 +36,19 @@ class InferenceRecipe:
     """
 
     def __init__(self, cfg: DictConfig) -> None:
+        torch.cuda.nvtx.range_push("InferenceRecipe::__init__")
         self._device = utils.get_device(device=cfg.device)
         self._dtype = utils.get_dtype(dtype=cfg.dtype, device=self._device)
         self._quantizer = config.instantiate(cfg.quantizer)
         self._quantization_mode = utils.get_quantizer_mode(self._quantizer)
 
         utils.set_seed(seed=cfg.seed)
+        torch.cuda.nvtx.range_pop()
 
     def setup(self, cfg: DictConfig) -> None:
+        torch.cuda.nvtx.range_push("InferenceRecipe::setup")
+        
+        torch.cuda.nvtx.range_push("checkpointer_setup")
         checkpointer = config.instantiate(cfg.checkpointer)
         if self._quantization_mode is None:
             ckpt_dict = checkpointer.load_checkpoint()
@@ -54,43 +57,67 @@ class InferenceRecipe:
             # currently loading a quantized model is only supported with the
             # FullModelTorchTuneCheckpointer
             ckpt_dict = checkpointer.load_checkpoint(weights_only=False)
-
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("model_setup")
         self._model = self._setup_model(
             model_cfg=cfg.model,
             model_state_dict=ckpt_dict[utils.MODEL_KEY],
             enable_kv_cache=cfg.enable_kv_cache,
         )
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("tokenizer_setup")
         self._tokenizer = config.instantiate(cfg.tokenizer)
-
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_pop()
+        
     def _setup_model(
         self,
         model_cfg: DictConfig,
         model_state_dict: Dict[str, Any],
         enable_kv_cache: bool = True,
     ) -> nn.Module:
+        torch.cuda.nvtx.range_push("InferenceRecipe::_setup_model")
+        torch.cuda.nvtx.range_push("model_instantiation")
         with utils.set_default_dtype(self._dtype), self._device:
             model = config.instantiate(model_cfg)
-
+        torch.cuda.nvtx.range_pop()
+        
+        
         if self._quantization_mode is not None:
+            torch.cuda.nvtx.range_push("quantization")
             model = self._quantizer.quantize(model)
             model = model.to(device=self._device, dtype=self._dtype)
-
+            torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("model_load_state_dict")
         model.load_state_dict(model_state_dict)
+        torch.cuda.nvtx.range_pop()
 
         # Validate model was loaded in with the expected dtype.
+        torch.cuda.nvtx.range_push("validate_dtype")
         utils.validate_expected_param_dtype(model.named_parameters(), dtype=self._dtype)
+        torch.cuda.nvtx.range_pop()
         logger.info(f"Model is initialized with precision {self._dtype}.")
 
         # Ensure the cache is setup on the right device
         if enable_kv_cache:
+            torch.cuda.nvtx.range_push("setup_caches")
             with self._device:
                 model.setup_caches(batch_size=1, dtype=self._dtype)
-
+            torch.cuda.nvtx.range_pop()
+            
         # Wrap the model with autonvtx for NVTX profiling
         model = autonvtx(model)
         
         # Move model to device
+        torch.cuda.nvtx.range_push("model_to_device_after_autonvtx")
         model = model.to(self._device)
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_pop()
 
         return model
 
@@ -139,24 +166,35 @@ class InferenceRecipe:
                 chat_format = _get_component_from_path(chat_format)
                 messages = chat_format.format(messages)
             return self._tokenizer.tokenize_messages(messages)[0]
-
+        
     @torch.no_grad()
     def generate(self, cfg: DictConfig):
+        torch.cuda.nvtx.range_push("convert_prompt_to_tokens")
         tokens = self.convert_prompt_to_tokens(
             cfg.prompt, cfg.get("chat_format", None), cfg.get("instruct_template", None)
         )
+        torch.cuda.nvtx.range_pop()
+        
+        torch.cuda.nvtx.range_push("prompt_tensor")
         prompt = torch.tensor(tokens, dtype=torch.int, device=self._device)
-
+        torch.cuda.nvtx.range_pop()
+        
+        
         custom_generate_next_token = None
 
         # since quantized model uses torch.compile to get speedup, it needs a warm up / prefill run
         # to get the accurate performance measurement
         if self._quantization_mode is not None:
             logger.info("Starting compilation to improve generation performance ...")
+            torch.cuda.nvtx.range_push("torch.compile")
             custom_generate_next_token = torch.compile(
                 utils.generate_next_token, mode="max-autotune", fullgraph=True
             )
+            torch.cuda.nvtx.range_pop()
+            
+            
             t0 = time.perf_counter()
+            torch.cuda.nvtx.range_push("warmup_run")
             _ = utils.generate(
                 model=self._model,
                 prompt=prompt,
@@ -167,11 +205,13 @@ class InferenceRecipe:
                 pad_id=self._tokenizer.pad_id,
                 custom_generate_next_token=custom_generate_next_token,
             )
+            torch.cuda.nvtx.range_pop()
             t = time.perf_counter() - t0
             logger.info(f"Warmup run for quantized model takes: {t:.02f} sec")
 
         t0 = time.perf_counter()
         logger.info("Starting generation ...")
+        torch.cuda.nvtx.range_push("generate")
         generated_tokens = utils.generate(
             model=self._model,
             prompt=prompt,
@@ -182,10 +222,12 @@ class InferenceRecipe:
             pad_id=self._tokenizer.pad_id,
             custom_generate_next_token=custom_generate_next_token,
         )
+        torch.cuda.nvtx.range_pop()
         t = time.perf_counter() - t0
 
         logger.info(self._tokenizer.decode(generated_tokens[0]))
 
+        torch.cuda.nvtx.range_push("calculate_model_size")
         model_size = sum(
             [
                 p.numel() * p.dtype.itemsize
@@ -194,6 +236,7 @@ class InferenceRecipe:
                 )
             ]
         )
+        torch.cuda.nvtx.range_pop()
 
         tokens_generated = len(generated_tokens[0]) - prompt.size(0)
         tokens_sec = tokens_generated / t

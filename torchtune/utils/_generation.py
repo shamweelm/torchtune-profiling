@@ -20,6 +20,7 @@ def sample(
     logits: torch.Tensor, temperature: float = 1.0, top_k: int = None
 ) -> torch.Tensor:
     """Generic sample from a probability distribution."""
+    torch.cuda.nvtx.range_push("sample")
     # scale the logits based on temperature
     logits = logits / max(temperature, 1e-5)
     if top_k is not None:
@@ -31,7 +32,10 @@ def sample(
         logits = torch.where(logits < pivot, -float("Inf"), logits)
     # change logits into probabilities
     probs = torch.nn.functional.softmax(logits, dim=-1)
-    return multinomial_sample_one(probs)
+    sample_probs = multinomial_sample_one(probs)
+    torch.cuda.nvtx.range_pop()
+    
+    return sample_probs
 
 
 def generate_next_token(
@@ -44,7 +48,9 @@ def generate_next_token(
     """Generates the next tokens."""
     # model produces logits in [bsz, seq_length, vocab_size]
     # we want to take the last token's logits as the input to the next model call
+    torch.cuda.nvtx.range_push("model_forward")
     logits = model(x, input_pos=input_pos)[:, -1]
+    torch.cuda.nvtx.range_pop()
     return sample(logits, temperature, top_k)
 
 
@@ -52,11 +58,13 @@ def update_stop_tokens_tracker(
     tokens: torch.Tensor, stop_tokens: torch.Tensor, stop_token_reached: torch.Tensor
 ) -> torch.Tensor:
     """Updates which sequences have reached a stop token."""
+    torch.cuda.nvtx.range_push("update_stop_tokens_tracker")
     # tokens: [bsz, 1]
     # stop_tokens: [num_stop_tokens]
     # stop_token_reached: [bsz]
     stop_token_reached_curr = torch.isin(tokens, stop_tokens).flatten()
     stop_token_reached |= stop_token_reached_curr
+    torch.cuda.nvtx.range_pop()
     return stop_token_reached
 
 
@@ -101,6 +109,8 @@ def generate(
     Returns:
         List[List[int]]: collection of lists of generated tokens
     """
+    torch.cuda.nvtx.range_push("generate_utils.generate")
+    torch.cuda.nvtx.range_push("initialize_prompt_and_generated_tokens")
     prompt = prompt.view(1, -1) if prompt.ndim == 1 else prompt
     # convert stop tokens to tensor for easy matching
     stop_tokens = (
@@ -115,12 +125,19 @@ def generate(
     stop_token_mask = torch.ones(
         (bsz, prompt_length + 1), dtype=torch.int32, device=prompt.device
     )
+    torch.cuda.nvtx.range_pop()
 
     if custom_generate_next_token is None:
+        torch.cuda.nvtx.range_push("initialize_custom_generate_next_token")
         custom_generate_next_token = generate_next_token
+        torch.cuda.nvtx.range_pop()
 
     # generate the first tokens conditioned on the prompt
+    torch.cuda.nvtx.range_push("input_pos")
     input_pos = torch.arange(0, model.max_seq_len, device=prompt.device)
+    torch.cuda.nvtx.range_pop()
+    
+    torch.cuda.nvtx.range_push("generate_next_token")
     tokens = generate_next_token(
         model,
         input_pos=input_pos[:prompt_length],
@@ -128,6 +145,7 @@ def generate(
         temperature=temperature,
         top_k=top_k,
     )
+    torch.cuda.nvtx.range_pop()
     generated_tokens = torch.cat([generated_tokens, tokens], dim=-1)
 
     # stop early if we reach a stop token in every seq
@@ -141,6 +159,7 @@ def generate(
     curr_pos = prompt_length
     # if key value caches are enabled, we can incrementally decode
     incremental_decoding = model.caches_are_enabled()
+    torch.cuda.nvtx.range_push("generate_tokens")
     for _ in range(max_generated_tokens - 1):
         # update stop_token_mask if we reached a stop token in a previous step
         # by appending the logical not of stop_token_reached to the end of the mask
@@ -175,12 +194,17 @@ def generate(
             )
             if stop_token_reached.all().item():
                 break
-
+    torch.cuda.nvtx.range_pop()
+    
     # mask out generated tokens in seqs that already hit a stop token
     if stop_tokens is not None:
+        torch.cuda.nvtx.range_push("mask_out_stop_tokens")
         generated_tokens = generated_tokens * stop_token_mask
         # if pad_id is not 0, replace 0 with pad_id
         if pad_id != 0:
             generated_tokens[generated_tokens == 0] = pad_id
+        torch.cuda.nvtx.range_pop()
+            
+    torch.cuda.nvtx.range_pop()
 
     return generated_tokens.tolist()
