@@ -9,15 +9,15 @@ model:
 
 checkpointer:
   _component_: torchtune.utils.FullModelTorchTuneCheckpointer
-  checkpoint_dir: /tmp/Llama-2-7b-hf/
+  checkpoint_dir: /tmp/Llama-2-7b-hf-qt/
   checkpoint_files: [
-    pytorch_model-00001-of-00002-4w.pt
+    pytorch_model-00001-of-00002-4w.pt,
   ]
-  output_dir: /tmp/Llama-2-7b-hf/
+  output_dir: /tmp/Llama-2-7b-hf-qt/
   model_type: LLAMA2
 
 device: cuda
-dtype: fp32
+dtype: bf16
 
 seed: 1234
 

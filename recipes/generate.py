@@ -65,6 +65,9 @@ class InferenceRecipe:
             model_state_dict=ckpt_dict[utils.MODEL_KEY],
             enable_kv_cache=cfg.enable_kv_cache,
         )
+        # Clear cuda cache after model setup
+        torch.cuda.empty_cache()
+        
         torch.cuda.nvtx.range_pop()
         
         torch.cuda.nvtx.range_push("tokenizer_setup")
@@ -87,6 +90,7 @@ class InferenceRecipe:
         
         
         if self._quantization_mode is not None:
+            print("Quantizing model")
             torch.cuda.nvtx.range_push("quantization")
             model = self._quantizer.quantize(model)
             model = model.to(device=self._device, dtype=self._dtype)
@@ -111,11 +115,6 @@ class InferenceRecipe:
             
         # Wrap the model with autonvtx for NVTX profiling
         model = autonvtx(model)
-        
-        # Move model to device
-        torch.cuda.nvtx.range_push("model_to_device_after_autonvtx")
-        model = model.to(self._device)
-        torch.cuda.nvtx.range_pop()
         
         torch.cuda.nvtx.range_pop()
 
