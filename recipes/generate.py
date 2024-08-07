@@ -50,13 +50,18 @@ class InferenceRecipe:
         
         torch.cuda.nvtx.range_push("checkpointer_setup")
         checkpointer = config.instantiate(cfg.checkpointer)
+        print("Checkpointer instantiated")
         if self._quantization_mode is None:
+            print("Loading checkpoint")
             ckpt_dict = checkpointer.load_checkpoint()
         else:
+            print("Loading quantized checkpoint")
             # weights_only needs to be False when loading a quantized model
             # currently loading a quantized model is only supported with the
             # FullModelTorchTuneCheckpointer
             ckpt_dict = checkpointer.load_checkpoint(weights_only=False)
+        # Print current memory usage
+        print(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
         torch.cuda.nvtx.range_pop()
         
         torch.cuda.nvtx.range_push("model_setup")
@@ -84,10 +89,13 @@ class InferenceRecipe:
     ) -> nn.Module:
         torch.cuda.nvtx.range_push("InferenceRecipe::_setup_model")
         torch.cuda.nvtx.range_push("model_instantiation")
-        with utils.set_default_dtype(self._dtype), self._device:
-            model = config.instantiate(model_cfg)
+        # with utils.set_default_dtype(self._dtype), self._device:
+        #     model = config.instantiate(model_cfg)
+        model = config.instantiate(model_cfg)
         torch.cuda.nvtx.range_pop()
         
+        # Print current memory usage
+        print(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
         
         if self._quantization_mode is not None:
             print("Quantizing model")
@@ -95,6 +103,13 @@ class InferenceRecipe:
             model = self._quantizer.quantize(model)
             model = model.to(device=self._device, dtype=self._dtype)
             torch.cuda.nvtx.range_pop()
+        else:
+            # Move the model to the device
+            model = model.to(device=self._device, dtype=self._dtype)    
+        
+        # Print current memory usage
+        print(f"Memory used: {torch.cuda.max_memory_allocated() / 1e9:.02f} GB")
+
         
         torch.cuda.nvtx.range_push("model_load_state_dict")
         model.load_state_dict(model_state_dict)
@@ -115,7 +130,7 @@ class InferenceRecipe:
             
         # Wrap the model with autonvtx for NVTX profiling
         model = autonvtx(model)
-        
+
         torch.cuda.nvtx.range_pop()
 
         return model
