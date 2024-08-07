@@ -19,60 +19,68 @@ fi
 
 # Get the nsys stats
 # Commands
-cmd="nsys stats -r cuda_api_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "nvtx_gpu_proj_sum completed."
+# Not needed
+# cmd="nsys stats -r cuda_api_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "nvtx_gpu_proj_sum completed."
 
 cmd="nsys stats -r cuda_api_trace -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
 echo $cmd
 $cmd
 echo "cuda_api_trace completed."
 
-cmd="nsys stats -r cuda_gpu_kern_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "cuda_gpu_kern_sum completed."
+# Not needed
+# cmd="nsys stats -r cuda_gpu_kern_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "cuda_gpu_kern_sum completed."
 
-cmd="nsys stats -r cuda_gpu_kern_gb_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "cuda_gpu_kern_gb_sum completed."
+# Not needed
+# cmd="nsys stats -r cuda_gpu_kern_gb_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "cuda_gpu_kern_gb_sum completed."
 
-cmd="nsys stats -r cuda_gpu_mem_size_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "cuda_gpu_mem_size_sum completed."
+# Not needed
+# cmd="nsys stats -r cuda_gpu_mem_size_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "cuda_gpu_mem_size_sum completed."
 
-cmd="nsys stats -r cuda_gpu_mem_time_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "cuda_gpu_mem_time_sum completed."
+# Not needed
+# cmd="nsys stats -r cuda_gpu_mem_time_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "cuda_gpu_mem_time_sum completed."
 
-cmd="nsys stats -r cuda_gpu_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "cuda_gpu_sum completed."
+# Not needed
+# cmd="nsys stats -r cuda_gpu_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "cuda_gpu_sum completed."
 
 cmd="nsys stats -r cuda_gpu_trace -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
 echo $cmd
 $cmd
 echo "cuda_gpu_trace completed."
 
-cmd="nsys stats -r cuda_kern_exec_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "cuda_kern_exec_sum completed."
+# Not needed
+# cmd="nsys stats -r cuda_kern_exec_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "cuda_kern_exec_sum completed."
 
 cmd="nsys stats -r cuda_kern_exec_trace -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
 echo $cmd
 $cmd
 echo "cuda_kern_exec_trace completed."
 
-cmd="nsys stats -r cuda_api_gpu_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "cuda_api_gpu_sum completed."
+# Not needed
+# cmd="nsys stats -r cuda_api_gpu_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "cuda_api_gpu_sum completed."
 
 echo "All CUDA commands executed successfully. Check the output in ${OUTPUT_DIR}."
 

@@ -44,12 +44,13 @@ echo "nvtx_pushpop_trace completed."
 # $cmd
 # echo "nvtx_kern_sum completed."
 
-cmd="nsys stats -r nvtx_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "nvtx_sum completed."
+# Not needed
+# cmd="nsys stats -r nvtx_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "nvtx_sum completed."
 
-echo "All commands executed successfully. Check the output in ${OUTPUT_DIR}."
+# echo "All commands executed successfully. Check the output in ${OUTPUT_DIR}."
 
 # End of script
 
