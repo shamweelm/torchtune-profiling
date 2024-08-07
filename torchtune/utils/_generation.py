@@ -48,9 +48,7 @@ def generate_next_token(
     """Generates the next tokens."""
     # model produces logits in [bsz, seq_length, vocab_size]
     # we want to take the last token's logits as the input to the next model call
-    torch.cuda.nvtx.range_push("model_forward")
     logits = model(x, input_pos=input_pos)[:, -1]
-    torch.cuda.nvtx.range_pop()
     return sample(logits, temperature, top_k)
 
 
