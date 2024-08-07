@@ -16,6 +16,8 @@ from torchtune import config, utils
 from torchtune.config._utils import _get_component_from_path
 from torchtune.data import ChatFormat, InstructTemplate, Message
 import autonvtx
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
 
 logger = utils.get_logger("DEBUG")
 
