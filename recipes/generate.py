@@ -16,8 +16,6 @@ from torchtune import config, utils
 from torchtune.config._utils import _get_component_from_path
 from torchtune.data import ChatFormat, InstructTemplate, Message
 import autonvtx
-import torch._dynamo
-torch._dynamo.config.suppress_errors = True
 
 logger = utils.get_logger("DEBUG")
 
@@ -183,33 +181,6 @@ class InferenceRecipe:
         
         
         custom_generate_next_token = None
-
-        # since quantized model uses torch.compile to get speedup, it needs a warm up / prefill run
-        # to get the accurate performance measurement
-        if self._quantization_mode is not None:
-            logger.info("Starting compilation to improve generation performance ...")
-            torch.cuda.nvtx.range_push("torch.compile")
-            custom_generate_next_token = torch.compile(
-                utils.generate_next_token, mode="max-autotune", fullgraph=True
-            )
-            torch.cuda.nvtx.range_pop()
-            
-            
-            t0 = time.perf_counter()
-            torch.cuda.nvtx.range_push("warmup_run")
-            _ = utils.generate(
-                model=self._model,
-                prompt=prompt,
-                max_generated_tokens=2,
-                temperature=cfg.temperature,
-                top_k=cfg.top_k,
-                stop_tokens=self._tokenizer.stop_tokens,
-                pad_id=self._tokenizer.pad_id,
-                custom_generate_next_token=custom_generate_next_token,
-            )
-            torch.cuda.nvtx.range_pop()
-            t = time.perf_counter() - t0
-            logger.info(f"Warmup run for quantized model takes: {t:.02f} sec")
 
         t0 = time.perf_counter()
         logger.info("Starting generation ...")
