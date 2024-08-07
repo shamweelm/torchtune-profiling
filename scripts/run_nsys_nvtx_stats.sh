@@ -19,30 +19,30 @@ if [ ! -f "$INPUT_PATH" ]; then
 fi
 
 # Get the nsys stats
-cmd="nsys stats -r nvtx_gpu_proj_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "nvtx_gpu_proj_sum completed."
+# cmd="nsys stats -r nvtx_gpu_proj_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "nvtx_gpu_proj_sum completed."
 
 cmd="nsys stats -r nvtx_gpu_proj_trace -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
 echo $cmd
 $cmd
 echo "nvtx_gpu_proj_trace completed."
 
-cmd="nsys stats -r nvtx_pushpop_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "nvtx_pushpop_sum completed."
+# cmd="nsys stats -r nvtx_pushpop_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "nvtx_pushpop_sum completed."
 
 cmd="nsys stats -r nvtx_pushpop_trace -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
 echo $cmd
 $cmd
 echo "nvtx_pushpop_trace completed."
 
-cmd="nsys stats -r nvtx_kern_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
-echo $cmd
-$cmd
-echo "nvtx_kern_sum completed."
+# cmd="nsys stats -r nvtx_kern_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
+# echo $cmd
+# $cmd
+# echo "nvtx_kern_sum completed."
 
 cmd="nsys stats -r nvtx_sum -f csv --output ${OUTPUT_DIR}/${TASK_NAME} ${INPUT_PATH}"
 echo $cmd

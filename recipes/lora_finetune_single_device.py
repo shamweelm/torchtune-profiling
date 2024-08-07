@@ -24,6 +24,8 @@ from torchtune.modules.peft.peft_utils import (
     get_adapter_params,
     get_lora_module_names,
     get_merged_lora_ckpt,
+    get_total_params,
+    get_total_trainable_params,
     set_trainable_params,
     validate_missing_and_unexpected_for_lora,
 )
@@ -592,7 +594,21 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         t0 = time.perf_counter()
         running_loss = 0
         num_tokens = 0
-
+        
+        torch.cuda.nvtx.range_push("model_params_stats")
+        # Get total trainable params
+        total_params = get_total_params(self._model)
+        log.info(f"Total params: {total_params}")
+        
+        # Get total trainable params
+        total_trainable_params = get_total_trainable_params(self._model)
+        log.info(f"Total trainable params: {total_trainable_params}")
+        
+        # Get the percentage of trainable params
+        percentage_trainable_params = total_trainable_params / total_params * 100
+        log.info(f"Percentage of trainable params: {percentage_trainable_params:.2f}%")
+        torch.cuda.nvtx.range_pop()
+        
         with self._profiler as prof:
             # self.epochs_run should be non-zero when we're resuming from a checkpoint
             torch.cuda.nvtx.range_push("epoch_loop")

@@ -350,3 +350,29 @@ def validate_missing_and_unexpected_for_lora(
     torch.cuda.nvtx.range_pop()
     
     torch.cuda.nvtx.range_pop()
+
+
+def get_total_params(model: nn.Module) -> int:
+    """
+    Get the total number of parameters in a model.
+
+    Args:
+        model (nn.Module): The model for which to count parameters.
+
+    Returns:
+        int: The total number of parameters in the model.
+    """
+    return sum(p.numel() for p in model.parameters())
+
+
+def get_total_trainable_params(model: nn.Module) -> int:
+    """
+    Get the total number of trainable parameters in a model.
+
+    Args:
+        model (nn.Module): The model for which to count parameters.
+
+    Returns:
+        int: The total number of trainable parameters in the model.
+    """
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
