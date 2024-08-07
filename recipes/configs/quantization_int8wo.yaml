@@ -25,4 +25,3 @@ seed: 1234
 
 quantizer:
   _component_: torchtune.utils.quantization.Int8WeightOnlyQuantizer
-  groupsize: 256
