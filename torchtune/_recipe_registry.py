@@ -214,6 +214,7 @@ _ALL_RECIPES = [
         configs=[
             Config(name="generation", file_path="generation.yaml"),
             Config(name="generation_profiling", file_path="generation_profiling.yaml"),
+            Config(name="generation_quantization_profiling", file_path="generation_quantization_profiling.yaml"),
         ],
         supports_distributed=False,
     ),
