@@ -230,8 +230,8 @@ _ALL_RECIPES = [
         file_path="quantize.py",
         configs=[
             Config(name="quantization", file_path="quantization.yaml"),
-            Config(name="quantization_int4wo", file_path="quantization_int4.yaml"),
-            Config(name="quantization_int8wo", file_path="quantization_int8.yaml"),
+            Config(name="quantization_int4wo", file_path="quantization_int4wo.yaml"),
+            Config(name="quantization_int8wo", file_path="quantization_int8wo.yaml"),
             Config(name="quantization_int8dynamic", file_path="quantization_int8dynamic.yaml"),
         ],
         supports_distributed=False,
